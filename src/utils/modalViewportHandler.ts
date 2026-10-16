@@ -4,15 +4,12 @@
  * Ensures that whenever ANY modal, popup, dialog, or overlay opens across ANY dashboard:
  * 1. Automatically scrolls the page/viewport to bring the opened popup into immediate view (centered).
  * 2. Automatically resets internal scrollable containers inside the modal to the TOP (scrollTop = 0).
- * 3. Prevents any stuck black screens, dark overlays, or locked body scroll states.
+ * 3. Locks background page scrolling (overflow: hidden) and restores it upon closing.
+ * 4. Ensures headers, close buttons, and content are fully accessible and scrollable.
  */
 
-/**
- * Resets the scroll position of an element and all its internal scrollable children to top (scrollTop = 0).
- */
 export function resetInternalScrollContainersToTop(container: HTMLElement) {
   if (!container) return;
-
   const resetElement = (el: HTMLElement) => {
     try {
       if (el.scrollTop !== 0) {
@@ -33,12 +30,10 @@ export function resetInternalScrollContainersToTop(container: HTMLElement) {
   const scrollableElements = container.querySelectorAll<HTMLElement>(
     '.overflow-y-auto, .overflow-auto, .overflow-y-scroll, [class*="overflow-y-auto"], [class*="overflow-auto"], [class*="overflow-y-scroll"], [data-scroll-container="true"]'
   );
-
   scrollableElements.forEach((el) => {
     resetElement(el);
   });
 
-  // Also query divs/forms/sections/articles with overflow and scrollHeight > clientHeight
   const allElements = container.querySelectorAll<HTMLElement>('div, form, section, main, article, ul');
   allElements.forEach((el) => {
     try {
@@ -59,12 +54,8 @@ export function resetInternalScrollContainersToTop(container: HTMLElement) {
   });
 }
 
-/**
- * Ensures a modal/popup is scrolled into the user's viewport and its internal scroll areas are reset to top.
- */
 export function ensureModalScrolledToTop(target: HTMLElement | string | null | undefined) {
   if (typeof window === 'undefined' || !target) return;
-
   const element = typeof target === 'string' ? (document.querySelector(target) as HTMLElement) : target;
   if (!element) return;
 
@@ -72,27 +63,43 @@ export function ensureModalScrolledToTop(target: HTMLElement | string | null | u
     // 1. Reset internal scroll positions to top
     resetInternalScrollContainersToTop(element);
 
-    const fixedOverlay = element.closest('.fixed.inset-0, [class*="fixed"][class*="inset-0"]') as HTMLElement;
-    if (fixedOverlay) {
-      if (fixedOverlay.scrollTop !== 0) fixedOverlay.scrollTop = 0;
-      resetInternalScrollContainersToTop(fixedOverlay);
-      // Fixed overlays are already fixed to the window viewport.
-      // Do NOT call scrollIntoView on window/body as it causes the page background to jump and black out!
-      return;
+    // 2. Ensure body scroll is locked while modal is open
+    if (document.body.style.overflow !== 'hidden') {
+      document.body.style.overflow = 'hidden';
     }
 
-    // 2. Only for inline/non-fixed popups, gently center in viewport
+    // 3. Find modal card/dialog container to center in viewport
     const modalCard = element.querySelector<HTMLElement>(
       '.bg-zinc-950, .bg-zinc-900, .bg-slate-950, .bg-slate-900, [role="dialog"], [role="alertdialog"], .max-w-xl, .max-w-2xl, .max-w-3xl, .max-w-4xl, .max-w-5xl, .max-w-lg, .rounded-3xl, .rounded-2xl, .rounded-xl'
     ) || element;
 
-    const style = window.getComputedStyle(modalCard);
-    if (style.position !== 'fixed' && typeof modalCard.scrollIntoView === 'function') {
-      try {
-        modalCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-      } catch {
-        // Ignore scrollIntoView errors
+    try {
+      if (!modalCard.classList.contains('max-h-[90vh]')) {
+        modalCard.style.maxHeight = '90vh';
       }
+      if (!modalCard.style.display || modalCard.style.display === 'block') {
+        const hasOverflow = modalCard.classList.contains('overflow-y-auto') || modalCard.classList.contains('overflow-hidden');
+        if (!hasOverflow) {
+          modalCard.style.overflowY = 'auto';
+        }
+      }
+    } catch {
+      // ignore style errors
+    }
+
+    // Scroll window so modal is comfortably centered
+    try {
+      const rect = element.getBoundingClientRect();
+      const absoluteTop = window.pageYOffset + rect.top;
+      const targetY = absoluteTop - (window.innerHeight - rect.height) / 2;
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: 'smooth'
+      });
+    } catch {
+      try {
+        modalCard.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      } catch {}
     }
   };
 
@@ -104,9 +111,6 @@ export function ensureModalScrolledToTop(target: HTMLElement | string | null | u
   setTimeout(performResetAndScroll, 120);
 }
 
-/**
- * Checks whether an HTMLElement is currently an open modal/popup/overlay.
- */
 function isVisibleModal(el: HTMLElement): boolean {
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
   if (!document.body.contains(el)) return false;
@@ -140,7 +144,6 @@ function isVisibleModal(el: HTMLElement): boolean {
 
   if (!isFixedOverlay && !isNamedModal) return false;
 
-  // Check if hidden by style or display
   const style = window.getComputedStyle(el);
   if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || el.hasAttribute('hidden')) {
     return false;
@@ -154,13 +157,11 @@ let isGlobalModalViewportInitialized = false;
 export function initGlobalModalViewportHandler() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
   if (isGlobalModalViewportInitialized) return () => {};
-
   isGlobalModalViewportInitialized = true;
 
   const scannedModals = new Set<HTMLElement>();
 
   const checkAndUpdateModals = () => {
-    // Find all potential modal candidates in document
     const candidates = document.querySelectorAll<HTMLElement>(
       '[role="dialog"], [role="alertdialog"], .fixed.inset-0, [class*="fixed"][class*="inset-0"], [id*="modal" i], [id*="popup" i], [id*="dialog" i], [id*="drawer" i], [id*="_form"]'
     );
@@ -170,7 +171,6 @@ export function initGlobalModalViewportHandler() {
     candidates.forEach((el) => {
       if (isVisibleModal(el)) {
         currentVisibleModals.add(el);
-
         if (!scannedModals.has(el)) {
           scannedModals.add(el);
           ensureModalScrolledToTop(el);
@@ -178,15 +178,17 @@ export function initGlobalModalViewportHandler() {
       }
     });
 
-    // Clean up scanned modals that are no longer in DOM or hidden
     scannedModals.forEach((m) => {
       if (!currentVisibleModals.has(m)) {
         scannedModals.delete(m);
       }
     });
 
-    // Safeguard: If no modals are currently visible, guarantee body overflow is normal
-    if (currentVisibleModals.size === 0) {
+    if (currentVisibleModals.size > 0) {
+      if (document.body.style.overflow !== 'hidden') {
+        document.body.style.overflow = 'hidden';
+      }
+    } else {
       if (document.body.style.overflow === 'hidden') {
         document.body.style.overflow = '';
       }
@@ -204,12 +206,13 @@ export function initGlobalModalViewportHandler() {
     attributeFilter: ['class', 'style', 'hidden', 'open', 'data-state'],
   });
 
-  // Also check periodically and on click/blur/focus
-  const interval = setInterval(checkAndUpdateModals, 250);
+  const interval = setInterval(checkAndUpdateModals, 200);
+
   window.addEventListener('click', () => {
-    setTimeout(checkAndUpdateModals, 50);
-    setTimeout(checkAndUpdateModals, 200);
+    setTimeout(checkAndUpdateModals, 40);
+    setTimeout(checkAndUpdateModals, 150);
   }, true);
+
   window.addEventListener('focus', () => {
     setTimeout(checkAndUpdateModals, 100);
   });

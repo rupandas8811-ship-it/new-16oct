@@ -14,6 +14,7 @@ import { EventDropdownCell } from './EventDropdownCell';
 import { UnifiedEventDropdownCell } from './UnifiedEventDropdownCell';
 import { EventCategoryCell } from './EventCategoryCell';
 import { EventLocationCell } from './EventLocationCell';
+import { EventDateCell } from './EventDateCell';
 import { EventCell } from './EventCell';
 import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
 import { CameraLensStatsCard, CameraLensTheme } from './CameraLensStatsCard';
@@ -12586,6 +12587,7 @@ export const SalesModule: React.FC<SalesModuleProps> = ({ activeSubTab: external
                       </div>
                     </th>
                     <th className="p-3.5">Event Location</th>
+                    <th className="p-3.5">Event Date</th>
                     <th className="p-3.5">Current Status</th>
                     <th className="p-3.5">Created Date</th>
                     <th className="p-3.5 text-right pr-5 w-[160px] min-w-max">Action</th>
@@ -12658,6 +12660,9 @@ export const SalesModule: React.FC<SalesModuleProps> = ({ activeSubTab: external
                           </td>
                           <td className="p-3.5 text-zinc-300">
                             <EventLocationCell lead={lead} orders={orders} filterEventDateOption={filterEventDateOption} />
+                          </td>
+                          <td className="p-3.5 text-zinc-300">
+                            <EventDateCell lead={lead} orders={orders} filterEventDateOption={filterEventDateOption} />
                           </td>
                           <td className="p-3.5">
                             <StatusText status={leadStatus} />

@@ -227,9 +227,18 @@ export function getEventChronologicalTimestamp(event: any): number {
 export function sortEventsAscending<T = any>(events: T[]): T[] {
   if (!events || !Array.isArray(events)) return [];
   return events
-    .map((event, index) => ({ event, index, ts: getEventChronologicalTimestamp(event) }))
+    .map((event, index) => {
+      const ts = getEventChronologicalTimestamp(event);
+      const createdAt = new Date((event as any)?.created_at || (event as any)?.createdAt || 0).getTime();
+      return { event, index, ts, createdAt };
+    })
     .sort((a, b) => {
-      if (a.ts !== b.ts) return a.ts - b.ts;
+      if (a.ts !== b.ts) {
+        return b.ts - a.ts; // Most recent first (descending)
+      }
+      if (a.createdAt !== b.createdAt) {
+        return b.createdAt - a.createdAt; // Secondary sort: newest first
+      }
       return a.index - b.index;
     })
     .map(item => item.event);

@@ -505,12 +505,15 @@ const MONTH_NAMES_MAP: Record<string, string> = {
 export function formatDateDDMMYY(dateInput?: string | null | Date): string {
   if (!dateInput && (dateInput as any) !== 0) return '';
   if (typeof dateInput === 'string') {
-    const trimmed = dateInput.trim();
+    let trimmed = dateInput.trim();
     if (!trimmed || trimmed === '—' || trimmed === '-' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') {
       return trimmed;
     }
 
-    // 1. If it's already in "DD MMM YYYY" format (e.g. "20 Sep 2026" or "05 Oct 2026")
+    // Strip day of week prefix like "Sun, " or "Sunday, " or "Mon, "
+    trimmed = trimmed.replace(/^(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*[\s,]+/i, '').trim();
+
+    // 1. If it's already in "DD MMM YYYY" format (e.g. "20 Sep 2026" or "05 Oct 2026" or "1 Sep 2026")
     const alreadyDDMMMYYYY = trimmed.match(/^(\d{1,2})\s+([a-zA-Z]{3,9})\s+(\d{4})$/);
     if (alreadyDDMMMYYYY) {
       const day = alreadyDDMMMYYYY[1].padStart(2, '0');
@@ -539,6 +542,16 @@ export function formatDateDDMMYY(dateInput?: string | null | Date): string {
       const day = textMonthFirst[2].padStart(2, '0');
       let year = textMonthFirst[3];
       if (year.length === 2) year = '20' + year;
+      return `${day} ${month} ${year}`;
+    }
+
+    // 3b. If it's like "Oct 3" or "Sep 1" (missing year)
+    const textMonthFirstNoYear = trimmed.match(/^([a-zA-Z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?$/);
+    if (textMonthFirstNoYear) {
+      const mStr = textMonthFirstNoYear[1].toLowerCase();
+      const month = MONTH_NAMES_MAP[mStr] || (textMonthFirstNoYear[1].slice(0, 1).toUpperCase() + textMonthFirstNoYear[1].slice(1, 3).toLowerCase());
+      const day = textMonthFirstNoYear[2].padStart(2, '0');
+      const year = '2026';
       return `${day} ${month} ${year}`;
     }
 
@@ -801,7 +814,7 @@ export function parseDateToYYYYMMDD(input?: string | null): string {
   return s;
 }
 
-export const formatDateDDMMYYYY = formatDateToDDMMYYYY;
+export const formatDateDDMMYYYY = formatDateDDMMYY;
 
 /**
  * Universal Chronological Event Timestamp Parser
@@ -1284,7 +1297,10 @@ export async function verifyStaffDatabaseUniqueness(
   supabaseClient: any,
   mobile: string | undefined | null,
   email: string | undefined | null,
-  excludeStaffId?: string | null
+  excludeStaffId?: string | null,
+  excludeUserId?: string | null,
+  excludeMobile?: string | null,
+  excludeEmail?: string | null
 ): Promise<StaffDatabaseUniquenessResult> {
   const normMobile = cleanPhone(mobile);
   const normEmail = cleanEmail(email);
@@ -1352,6 +1368,21 @@ export async function verifyStaffDatabaseUniqueness(
   }
 
   const cleanExcludeId = excludeStaffId ? String(excludeStaffId).trim().toLowerCase() : null;
+  const cleanExcludeUserId = excludeUserId ? String(excludeUserId).trim().toLowerCase() : null;
+  const cleanExcludeMobile = cleanPhone(excludeMobile);
+  const cleanExcludeEmail = cleanEmail(excludeEmail);
+
+  const isExcluded = (id?: string | null, rEmail?: string | null, rMobile?: string | null) => {
+    const sId = id ? String(id).trim().toLowerCase() : '';
+    const sEmail = cleanEmail(rEmail);
+    const sMobile = cleanPhone(rMobile);
+
+    if (cleanExcludeId && sId && sId === cleanExcludeId) return true;
+    if (cleanExcludeUserId && sId && sId === cleanExcludeUserId) return true;
+    if (cleanExcludeEmail && sEmail && sEmail === cleanExcludeEmail) return true;
+    if (cleanExcludeMobile && sMobile && sMobile.length >= 7 && sMobile === cleanExcludeMobile) return true;
+    return false;
+  };
 
   let prodMobileMatch = false;
   let prodEmailMatch = false;
@@ -1366,8 +1397,7 @@ export async function verifyStaffDatabaseUniqueness(
   // Check production_staff
   if (Array.isArray(prodData)) {
     for (const p of prodData) {
-      const pId = p.staff_id ? String(p.staff_id).trim().toLowerCase() : '';
-      if (cleanExcludeId && pId && pId === cleanExcludeId) continue;
+      if (isExcluded(p.staff_id, p.email, p.mobile)) continue;
 
       if (isValidMobileToMatch) {
         const pNorm = cleanPhone(p.mobile);
@@ -1407,8 +1437,7 @@ export async function verifyStaffDatabaseUniqueness(
   // Check users (excluding orphaned staff accounts that have no active staff record in ops or prod tables)
   if (Array.isArray(usersData)) {
     for (const u of usersData) {
-      const uId = u.id ? String(u.id).trim().toLowerCase() : '';
-      if (cleanExcludeId && uId && uId === cleanExcludeId) continue;
+      if (isExcluded(u.id, u.email, u.mobile || u.phone)) continue;
 
       const uRole = (u.role || '').trim();
       const isOpsRole = uRole === 'Operation Staff' || uRole === 'Operations Team';
@@ -1446,8 +1475,7 @@ export async function verifyStaffDatabaseUniqueness(
   // Check operations_staff
   if (Array.isArray(opsData)) {
     for (const o of opsData) {
-      const oId = o.staff_id ? String(o.staff_id).trim().toLowerCase() : '';
-      if (cleanExcludeId && oId && oId === cleanExcludeId) continue;
+      if (isExcluded(o.staff_id, o.email, o.mobile)) continue;
 
       if (isValidMobileToMatch) {
         const oNorm = cleanPhone(o.mobile);
@@ -2755,6 +2783,7 @@ export interface EventTeamMemberAssignmentGroup {
   googleMapsLink?: string | null;
   guestPax?: string;
   mappings: TeamMemberStaffMapping[];
+  rawEvent?: any;
 }
 
 export const extractTeamMembersConfig = (lead: any, leadPkgs: any[]): EventTeamMemberConfig[] => {
@@ -2778,10 +2807,10 @@ export const extractTeamMembersConfig = (lead: any, leadPkgs: any[]): EventTeamM
     if (!parsed) return;
 
     if (Array.isArray(parsed)) {
-      parsed.forEach((item: any) => {
+      parsed.forEach((item: any, idx: number) => {
         if (item && typeof item === 'object' && ('event_id' in item || 'event_name' in item || 'event_type' in item || 'team_members' in item || 'inclusions' in item || 'deliverables' in item || 'members' in item)) {
-          const evId = String(item.event_id || item.id || '').trim();
-          const evName = String(item.event_name || item.name || item.event_type || '').trim();
+          const evId = String(item.event_id || item.id || `EV-${idx + 1}`).trim();
+          const evName = String(item.event_name || item.name || item.event_type || `Event ${idx + 1}`).trim();
           const tm = item.team_members || item.inclusions || item.deliverables || item.members || [];
           const tmList = Array.isArray(tm) ? tm : parseRaw(tm) || [];
           if (tmList.length > 0) {
@@ -2953,19 +2982,24 @@ export const getEventRolesForEvent = (ev: any, index: number, configList: EventT
     }
   }
 
-  // Also check if ev has a fallback sequence ID like EV-1 or EV-2
+  // 2. Fallback sequence ID check (ev-1, ev-2, etc.)
   const fallbackId = `ev-${index + 1}`;
   const matchByFallback = configList.find(c => {
     if (!c.event_id) return false;
     const cId = c.event_id.toLowerCase().trim();
-    return cId === fallbackId || cId.endsWith(`_${fallbackId}`) || cId.endsWith(`-${fallbackId}`);
+    return cId === fallbackId || cId.endsWith(`_${fallbackId}`) || cId.endsWith(`-${fallbackId}`) || cId === `EV-${index + 1}`;
   });
   if (matchByFallback && matchByFallback.team_members && matchByFallback.team_members.length > 0) {
     return matchByFallback.team_members;
   }
   
-  // Fallback by event name for older records where UUID wasn't generated synchronously
-  if (ev.event_name || ev.event_type) {
+  // 3. Index-based mapping fallback for multi-event or structured orders (configList[index])
+  if (configList[index] && configList[index].team_members && configList[index].team_members.length > 0) {
+    return configList[index].team_members;
+  }
+
+  // 4. Fallback by event name ONLY if totalEvents is 1 (single-event orders) to prevent cross-event team mixing in multi-event same-category orders
+  if (totalEvents === 1 && (ev.event_name || ev.event_type)) {
     const evName = String(ev.event_name || ev.event_type).toLowerCase().trim();
     if (evName) {
       const matchByName = configList.find(c => {
@@ -2979,7 +3013,7 @@ export const getEventRolesForEvent = (ev: any, index: number, configList: EventT
     }
   }
 
-  // 2. Single-event quotation / order: if totalEvents is 1 and configList has a single config
+  // 5. Single-event quotation / order: if totalEvents is 1 and configList has a single config
   if (totalEvents === 1) {
     if (configList.length === 1 && configList[0].team_members && configList[0].team_members.length > 0) {
       return configList[0].team_members;
@@ -2990,10 +3024,6 @@ export const getEventRolesForEvent = (ev: any, index: number, configList: EventT
     }
   }
 
-  // NOTE: For multi-event orders (totalEvents > 1):
-  // NEVER use array index (configList[index]).
-  // NEVER use arbitrary fallback.
-  // NEVER combine Event 1 and Event 2.
   return [];
 };
 
@@ -3448,23 +3478,22 @@ export function getEventTeamMemberStaffMapping(params: {
       }
     });
 
-    // 4. Any leftover assigned staff in pool not mapped to a required slot (only when no required slots were specified)
-    if (requiredSlots.length === 0) {
-      assignedStaffPool.forEach(staffMember => {
-        if (!staffMember.used) {
-          mappings.push({
-            teamMemberRole: staffMember.staff_role || 'Crew Member',
-            assignedStaffName: staffMember.staff_name,
-            assignedStaffId: staffMember.staff_id,
-            assignedStaffRole: staffMember.staff_role || 'Crew Member',
-            assignedStaffType: staffMember.staff_type || 'In-House',
-            status: staffMember.status || 'Assigned',
-            equipment: staffMember.equipment || [],
-            mobile: staffMember.mobile || ''
-          });
-        }
-      });
-    }
+    // 4. Any leftover assigned staff in pool not mapped to a required slot
+    assignedStaffPool.forEach(staffMember => {
+      if (!staffMember.used) {
+        staffMember.used = true;
+        mappings.push({
+          teamMemberRole: staffMember.staff_role || 'Crew Member',
+          assignedStaffName: staffMember.staff_name,
+          assignedStaffId: staffMember.staff_id,
+          assignedStaffRole: staffMember.staff_role || 'Crew Member',
+          assignedStaffType: staffMember.staff_type || 'In-House',
+          status: staffMember.status || 'Assigned',
+          equipment: staffMember.equipment || [],
+          mobile: staffMember.mobile || ''
+        });
+      }
+    });
 
     // 5. If no required slots were configured at all, and no staff in pool
     if (mappings.length === 0) {
@@ -3492,7 +3521,8 @@ export function getEventTeamMemberStaffMapping(params: {
       location: location,
       googleMapsLink: googleMapsLink,
       guestPax: guestPax,
-      mappings: mappings
+      mappings: mappings,
+      rawEvent: ev
     });
   });
 
@@ -3558,7 +3588,22 @@ export function getEventDeliverables(order: any, lead: any, eventId: string, eve
   return [];
 }
 
-const WHATSAPP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+const WHATSAPP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Formats a date range consistently into "DD MMM YYYY – DD MMM YYYY"
+ * Example: "01 Sep 2026 – 19 Sep 2026"
+ */
+export function formatDateRange(startDate?: string | null | Date, endDate?: string | null | Date, separator = ' – '): string {
+  const startFmt = startDate ? formatDateDDMMYY(startDate) : '';
+  const endFmt = endDate ? formatDateDDMMYY(endDate) : '';
+  if (startFmt && endFmt) {
+    return `${startFmt}${separator}${endFmt}`;
+  }
+  if (startFmt) return startFmt;
+  if (endFmt) return endFmt;
+  return '';
+}
 
 const toCalendarDateString = (dateVal?: string | null | Date): string | null => {
   if (!dateVal && (dateVal as any) !== 0) return null;
@@ -3642,6 +3687,8 @@ const toCalendarDateString = (dateVal?: string | null | Date): string | null => 
 
 export function formatOperationWhatsAppDate(dateVal?: string | null | Date): string {
   if (!dateVal && (dateVal as any) !== 0) return '';
+  const formatted = formatDateDDMMYY(dateVal);
+  if (formatted) return formatted;
   const cal = toCalendarDateString(dateVal);
   if (!cal) {
     const raw = String(dateVal).trim();
@@ -3651,8 +3698,130 @@ export function formatOperationWhatsAppDate(dateVal?: string | null | Date): str
   const [year, monthStr, dayStr] = cal.split('-');
   const monthIdx = parseInt(monthStr, 10) - 1;
   const monthName = WHATSAPP_MONTHS[monthIdx] || monthStr;
-  const dayNum = parseInt(dayStr, 10);
-  return `${dayNum} ${monthName} ${year}`;
+  const dayPadded = dayStr.padStart(2, '0');
+  return `${dayPadded} ${monthName} ${year}`;
+}
+
+export function getOtherAssignedStaffForEvent(
+  group: EventTeamMemberAssignmentGroup,
+  params: {
+    order?: any;
+    lead?: any;
+    staffAssignments?: any[];
+    modalEventAllocations?: any;
+    finalAssignments?: any[];
+    targetStaffName?: string;
+  },
+  allGroups: EventTeamMemberAssignmentGroup[]
+): string[] {
+  const targetLower = (params.targetStaffName || '').trim().toLowerCase();
+  const nameCaseMap = new Map<string, string>(); // lowercase -> display name
+
+  const addName = (rawName: any) => {
+    if (!rawName || typeof rawName !== 'string') return;
+    const name = rawName.trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    if (lower === 'unassigned' || lower === 'none' || lower === 'n/a' || lower === 'pending') return;
+    // Exclude recipient's own name
+    if (targetLower && lower === targetLower) return;
+
+    if (!nameCaseMap.has(lower)) {
+      nameCaseMap.set(lower, name);
+    }
+  };
+
+  const currentEventId = String(group.eventId || '').trim();
+  const rawEvId = (group.rawEvent?.id ? String(group.rawEvent.id) : (group.rawEvent?.event_id ? String(group.rawEvent.event_id) : '')).trim();
+
+  // Collect IDs of other events to strictly prevent cross-event staff leakage
+  const otherEventIds = new Set(
+    allGroups
+      .filter(g => g !== group && String(g.eventId || '').trim() !== currentEventId)
+      .flatMap((g, gIdx) => {
+        const gRawId = g.rawEvent?.id ? String(g.rawEvent.id).trim() : '';
+        const gRawEvId = g.rawEvent?.event_id ? String(g.rawEvent.event_id).trim() : '';
+        return [
+          String(g.eventId || '').trim(),
+          gRawId,
+          gRawEvId,
+          `ev_${allGroups.indexOf(g)}`,
+          `ev_${gIdx}`
+        ];
+      })
+      .filter(Boolean)
+  );
+
+  const thisEventIds = new Set(
+    [
+      currentEventId,
+      rawEvId,
+      `ev_${allGroups.indexOf(group)}`
+    ].filter(Boolean)
+  );
+
+  // 1. From group.mappings
+  (group.mappings || []).forEach(m => {
+    if (m.assignedStaffName) {
+      addName(m.assignedStaffName);
+    }
+  });
+
+  // 2. From modalEventAllocations for this event
+  if (params.modalEventAllocations) {
+    const alloc = params.modalEventAllocations[currentEventId] || 
+      (rawEvId && params.modalEventAllocations[rawEvId]) ||
+      Object.entries(params.modalEventAllocations).find(([k]) => thisEventIds.has(String(k).trim()))?.[1];
+    if (alloc && Array.isArray((alloc as any).staff)) {
+      (alloc as any).staff.forEach((s: any) => {
+        addName(s.staff_name || s.name);
+      });
+    }
+  }
+
+  // 3. From finalAssignments for this event
+  if (params.finalAssignments && Array.isArray(params.finalAssignments)) {
+    params.finalAssignments.forEach((a: any) => {
+      const aEvId = String(a.event_id || '').trim();
+      if (aEvId) {
+        if (otherEventIds.has(aEvId)) return;
+        if (thisEventIds.has(aEvId) || aEvId.includes(currentEventId) || (rawEvId && aEvId.includes(rawEvId)) || allGroups.length === 1) {
+          addName(a.staff_name || a.name);
+        }
+      } else if (allGroups.length === 1) {
+        addName(a.staff_name || a.name);
+      }
+    });
+  }
+
+  // 4. From staffAssignments (database)
+  if (params.staffAssignments && Array.isArray(params.staffAssignments)) {
+    const orderIdToMatch = params.order?.order_id || params.lead?.lead_id;
+    params.staffAssignments.forEach((sa: any) => {
+      if (sa.order_id !== orderIdToMatch && sa.order_id !== params.order?.order_id && sa.order_id !== params.lead?.lead_id) return;
+      if (sa.assignment_status === 'Cancelled') return;
+      const saEvId = String(sa.event_id || '').trim();
+      if (saEvId) {
+        if (otherEventIds.has(saEvId)) return;
+        if (thisEventIds.has(saEvId) || saEvId.includes(currentEventId) || (rawEvId && saEvId.includes(rawEvId)) || allGroups.length === 1) {
+          addName(sa.staff_name);
+        }
+      } else if (allGroups.length === 1) {
+        addName(sa.staff_name);
+      }
+    });
+  }
+
+  // 5. From raw event assigned_staff_names (if stored directly on event object)
+  const evObj = group.rawEvent || (params.lead?.events || params.order?.events || []).find((e: any, idx: number) => {
+    const eId = String(e.id || e.event_id || `ev_${idx}`).trim();
+    return thisEventIds.has(eId);
+  });
+  if (evObj?.assigned_staff_names && typeof evObj.assigned_staff_names === 'string') {
+    evObj.assigned_staff_names.split(',').forEach((n: string) => addName(n));
+  }
+
+  return Array.from(nameCaseMap.values());
 }
 
 export function generateWhatsAppAssignmentMessage(params: {
@@ -3682,20 +3851,27 @@ export function generateWhatsAppAssignmentMessage(params: {
       if (inMappings) return true;
 
       // 2. Check modalEventAllocations for this event
-      if (params.modalEventAllocations && params.modalEventAllocations[group.eventId]?.staff) {
-        const inModal = params.modalEventAllocations[group.eventId].staff.some((s: any) => 
-          (s.staff_name || s.name || '').trim().toLowerCase() === targetNameLower
-        );
-        if (inModal) return true;
+      if (params.modalEventAllocations) {
+        const currentEventId = String(group.eventId || '').trim();
+        const rawEvId = (group.rawEvent?.id ? String(group.rawEvent.id) : (group.rawEvent?.event_id ? String(group.rawEvent.event_id) : '')).trim();
+        const alloc = params.modalEventAllocations[currentEventId] || 
+          (rawEvId && params.modalEventAllocations[rawEvId]) ||
+          Object.entries(params.modalEventAllocations).find(([k]) => String(k).trim() === currentEventId || (rawEvId && String(k).trim() === rawEvId))?.[1];
+        if (alloc && Array.isArray((alloc as any).staff)) {
+          const inModal = (alloc as any).staff.some((s: any) => 
+            (s.staff_name || s.name || '').trim().toLowerCase() === targetNameLower
+          );
+          if (inModal) return true;
+        }
       }
 
       // 3. Check finalAssignments for this event
       if (params.finalAssignments && params.finalAssignments.length > 0) {
         const inFinal = params.finalAssignments.some((a: any) => {
           const isEvMatch = a.event_id 
-            ? (a.event_id === group.eventId || a.event_id.includes(group.eventId)) 
+            ? (a.event_id === group.eventId || a.event_id.includes(group.eventId) || (group.rawEvent?.id && a.event_id === String(group.rawEvent.id))) 
             : (groups.length === 1 || (a.event_name && a.event_name.toLowerCase() === group.eventName.toLowerCase()));
-          return isEvMatch && (a.staff_name || '').trim().toLowerCase() === targetNameLower;
+          return isEvMatch && (a.staff_name || a.name || '').trim().toLowerCase() === targetNameLower;
         });
         if (inFinal) return true;
       }
@@ -3707,11 +3883,18 @@ export function generateWhatsAppAssignmentMessage(params: {
           if (sa.order_id !== orderIdToMatch && sa.order_id !== order?.order_id && sa.order_id !== lead?.lead_id) return false;
           if (sa.assignment_status === 'Cancelled') return false;
           const isEvMatch = sa.event_id 
-            ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId)) 
+            ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId) || (group.rawEvent?.id && sa.event_id === String(group.rawEvent.id))) 
             : (groups.length === 1 || (sa.event_name && sa.event_name.toLowerCase() === group.eventName.toLowerCase()));
           return isEvMatch && (sa.staff_name || '').trim().toLowerCase() === targetNameLower;
         });
         if (inSa) return true;
+      }
+
+      // 5. Check ev.assigned_staff_names
+      const evObj = group.rawEvent;
+      if (evObj?.assigned_staff_names && typeof evObj.assigned_staff_names === 'string') {
+        const evNames = evObj.assigned_staff_names.split(',').map((n: string) => n.trim().toLowerCase());
+        if (evNames.includes(targetNameLower)) return true;
       }
 
       return false;
@@ -3729,34 +3912,34 @@ export function generateWhatsAppAssignmentMessage(params: {
 
   let msg = `Hello, ${staffDisplayName}!\n\n`;
   msg += `You have been assigned an event with the following details:\n\n`;
-  msg += `- **Customer:** ${customerName}\n`;
+  msg += `Customer: ${customerName}\n`;
   if (phone) {
-    msg += `- **Customer Mobile:** ${phone}\n`;
+    msg += `Customer Mobile: ${phone}\n`;
   }
 
   const totalGroups = filteredGroups.length;
 
   filteredGroups.forEach((group, idx) => {
     if (totalGroups > 1) {
-      msg += `- **Event (${idx + 1}):** ${group.eventName}\n`;
+      msg += `Event (${idx + 1}): ${group.eventName}\n`;
     } else {
-      msg += `- **Event:** ${group.eventName}\n`;
+      msg += `Event: ${group.eventName}\n`;
     }
 
     const repDate = (group.reportingDate && group.reportingDate !== 'N/A') ? group.reportingDate : (group.eventDate && group.eventDate !== 'N/A' ? group.eventDate : '');
     const formattedDate = formatOperationWhatsAppDate(repDate);
     if (formattedDate) {
-      msg += `- **Reporting Date:** ${formattedDate}\n`;
+      msg += `Reporting Date: ${formattedDate}\n`;
     }
     if (group.reportingTime && group.reportingTime !== 'N/A') {
-      msg += `- **Reporting Time:** ${group.reportingTime}\n`;
+      msg += `Reporting Time: ${group.reportingTime}\n`;
     }
 
     if (group.location && group.location !== 'N/A' && group.location.trim() !== '') {
-      msg += `- **Event Location:** ${group.location.trim()}\n`;
+      msg += `Event Location: ${group.location.trim()}\n`;
     }
     if (group.googleMapsLink && group.googleMapsLink !== 'N/A' && group.googleMapsLink.trim() !== '') {
-      msg += `- **Google Maps:** ${group.googleMapsLink.trim()}\n`;
+      msg += `Google Maps: ${group.googleMapsLink.trim()}\n`;
     }
 
     // Assigned Role / Team Members included
@@ -3773,7 +3956,7 @@ export function generateWhatsAppAssignmentMessage(params: {
         params.staffAssignments.forEach((sa: any) => {
           if (sa.staff_name && sa.staff_name.trim().toLowerCase() === targetLower) {
             const isEvMatch = sa.event_id 
-              ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId)) 
+              ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId) || (group.rawEvent?.id && sa.event_id === String(group.rawEvent.id))) 
               : true;
             if (isEvMatch && sa.staff_role) rolesSet.add(sa.staff_role);
           }
@@ -3790,7 +3973,7 @@ export function generateWhatsAppAssignmentMessage(params: {
       });
     }
     const assignedRoleStr = rolesSet.size > 0 ? Array.from(rolesSet).join(', ') : 'Operations Staff';
-    msg += `- **Assigned Role:** ${assignedRoleStr}\n`;
+    msg += `Assigned Role: ${assignedRoleStr}\n`;
 
     // Assigned Equipment specific to this staff member for this event
     const eqSet = new Set<string>();
@@ -3821,7 +4004,7 @@ export function generateWhatsAppAssignmentMessage(params: {
         params.staffAssignments.forEach((sa: any) => {
           if (sa.staff_name && sa.staff_name.trim().toLowerCase() === targetLower) {
             const isEvMatch = sa.event_id 
-              ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId)) 
+              ? (sa.event_id === group.eventId || sa.event_id.includes(group.eventId) || (group.rawEvent?.id && sa.event_id === String(group.rawEvent.id))) 
               : true;
             if (isEvMatch && sa.equipment) addEq(sa.equipment);
           }
@@ -3834,7 +4017,12 @@ export function generateWhatsAppAssignmentMessage(params: {
     }
 
     const assignedEquipmentStr = eqSet.size > 0 ? Array.from(eqSet).join(', ') : 'No equipment assigned';
-    msg += `- **Assigned Equipment:** ${assignedEquipmentStr}\n`;
+    msg += `Assigned Equipment: ${assignedEquipmentStr}\n`;
+
+    // Other Staff Assigned to This Event
+    const otherStaffNames = getOtherAssignedStaffForEvent(group, params, groups);
+    const otherStaffStr = otherStaffNames.length > 0 ? otherStaffNames.join(', ') : 'None';
+    msg += `Other Staff Assigned to This Event: ${otherStaffStr}\n`;
 
     if (idx < totalGroups - 1) {
       msg += `\n---\n\n`;

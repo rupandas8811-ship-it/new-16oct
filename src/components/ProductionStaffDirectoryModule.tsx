@@ -174,7 +174,8 @@ export const ProductionStaffDirectoryModule: React.FC = () => {
       supabaseClient,
       formMobile.trim(),
       finalEmail,
-      editingStaff?.staff_id || null
+      editingStaff?.staff_id || null,
+      null
     );
 
     if (!uniquenessCheck.isUnique) {

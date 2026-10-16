@@ -9,6 +9,7 @@ import { EventDropdownCell } from '../EventDropdownCell';
 import { UnifiedEventDropdownCell } from '../UnifiedEventDropdownCell';
 import { EventCategoryCell, getEventCategoryDateTimeTimestamp } from '../EventCategoryCell';
 import { EventLocationCell } from '../EventLocationCell';
+import { EventDateCell } from '../EventDateCell';
 import { EventCell } from '../EventCell';
 import { MultiSelectDropdown } from '../ui/MultiSelectDropdown';
 import { CameraLensStatsCard, CameraLensTheme } from '../CameraLensStatsCard';
@@ -896,6 +897,7 @@ export const SalesLeadsTable: React.FC<SalesLeadsTableProps> = (props) => {
                       </button>
                     </th>
                     <th className="p-3.5">Event Location</th>
+                    <th className="p-3.5">Event Date</th>
                     <th className="p-3.5">Current Status</th>
                     <th className="p-3.5">
                       <button
@@ -958,6 +960,9 @@ export const SalesLeadsTable: React.FC<SalesLeadsTableProps> = (props) => {
                           </td>
                           <td className="p-3.5 text-zinc-300">
                             <EventLocationCell lead={lead} orders={safeOrders} filterEventDateOption={filterEventDateOption} />
+                          </td>
+                          <td className="p-3.5 text-zinc-300">
+                            <EventDateCell lead={lead} orders={safeOrders} filterEventDateOption={filterEventDateOption} />
                           </td>
                           <td className="p-3.5">
                             <StatusText status={leadStatus} />

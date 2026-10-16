@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, Layers, X } from 'lucide-react';
 import { Lead } from '../types';
-import { deserializeLeadEvents } from '../utils';
+import { deserializeLeadEvents, formatDateDDMMYY } from '../utils';
 
 export interface EventCategoryCellProps {
   lead: Lead;
@@ -113,51 +113,8 @@ export const formatCategoryDisplayDate = (dateStr?: any): string => {
   if (dateStr === null || dateStr === undefined) return '';
   const clean = cleanText(dateStr);
   if (!clean) return '';
-
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  let month: number | null = null;
-  let day: number | null = null;
-
-  // DD-MM-YYYY or DD/MM/YYYY
-  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
-    const parts = clean.split(/[-/]/);
-    day = parseInt(parts[0], 10);
-    month = parseInt(parts[1], 10) - 1;
-  }
-  // YYYY-MM-DD or YYYY/MM/DD
-  else if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(clean)) {
-    const parts = clean.split(/[-/]/);
-    day = parseInt(parts[2], 10);
-    month = parseInt(parts[1], 10) - 1;
-  }
-  // Check if already in Month Day format, e.g. "Oct 3" or "Oct 03"
-  else if (/^([a-zA-Z]{3,9})\s+(\d{1,2})$/i.test(clean)) {
-    const m = clean.match(/^([a-zA-Z]{3,9})\s+(\d{1,2})$/i);
-    if (m) {
-      const mStr = m[1].toLowerCase().slice(0, 3);
-      const mIdx = months.findIndex(mo => mo.toLowerCase() === mStr);
-      if (mIdx !== -1) {
-        month = mIdx;
-        day = parseInt(m[2], 10);
-      }
-    }
-  }
-  // Try parsing with standard Date
-  else {
-    const d = new Date(clean);
-    if (!isNaN(d.getTime())) {
-      month = d.getMonth();
-      day = d.getDate();
-    }
-  }
-
-  if (month !== null && day !== null && month >= 0 && month < 12 && !isNaN(day)) {
-    const monthStr = months[month] || '';
-    return `${monthStr} ${day}`;
-  }
-
-  // Fallback: If not parsed into month/day, ensure it has NO "undefined" or "null"
+  const formatted = formatDateDDMMYY(clean);
+  if (formatted) return formatted;
   return cleanText(clean);
 };
 
@@ -262,8 +219,7 @@ export const EventCategoryCell: React.FC<EventCategoryCellProps> = ({ lead, orde
 
   const additionalCount = events.length > 1 ? events.length - 1 : 0;
 
-  // Below the Event Category, show ONLY the Event Date. Remove Event Name completely from this column.
-  const subLineText = cleanText(formattedDate);
+  const subLineText = '';
 
   const linkedOrder = orders?.find((o: any) => 
     o.lead_id === lead.lead_id || 
@@ -455,12 +411,7 @@ export const EventCategoryCell: React.FC<EventCategoryCellProps> = ({ lead, orde
                     </p>
                   </div>
 
-                  {evDate ? (
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300 pl-6">
-                      <Calendar className="w-3 h-3 text-amber-400/80 shrink-0" />
-                      <span>{evDate}</span>
-                    </div>
-                  ) : null}
+
                 </div>
               );
             })}
@@ -476,3 +427,5 @@ export const EventCategoryCell: React.FC<EventCategoryCellProps> = ({ lead, orde
     </div>
   );
 };
+
+

@@ -269,12 +269,32 @@ export const OperationsStaffManagement: React.FC = () => {
 
     setIsSaving(true);
     try {
+      let targetUserId = null;
+      let originalMobile = null;
+      let originalEmail = null;
+      if (editingId) {
+        const originalStaff = staff.find(s => s.staff_id === editingId) || productionStaff.find(s => s.staff_id === editingId);
+        if (originalStaff) {
+          originalMobile = originalStaff.mobile;
+          originalEmail = originalStaff.email;
+          const u = users.find((x: any) => 
+            (originalStaff.email && x.email?.toLowerCase() === originalStaff.email.toLowerCase()) ||
+            (originalStaff.mobile && x.mobile && String(x.mobile).replace(/\D/g, '') === String(originalStaff.mobile).replace(/\D/g, '')) ||
+            (originalStaff.email && x.username?.toLowerCase() === originalStaff.email.toLowerCase())
+          );
+          if (u?.id) targetUserId = u.id;
+        }
+      }
+
       // Duplicate Check Validation against production_staff, users, operations_staff
       const uniquenessCheck = await verifyStaffDatabaseUniqueness(
         supabaseClient,
         cleanMob,
         form.email || (editingId ? undefined : finalEmail),
-        editingId || null
+        editingId || null,
+        targetUserId,
+        originalMobile,
+        originalEmail
       );
 
       if (uniquenessCheck.queryFailed) {
@@ -302,29 +322,8 @@ export const OperationsStaffManagement: React.FC = () => {
       }
 
       if (editingId) {
-        const originalStaff = staff.find(s => s.staff_id === editingId);
+        const originalStaff = staff.find(s => s.staff_id === editingId) || productionStaff.find(s => s.staff_id === editingId);
         const targetEmail = originalStaff?.email || form.email || finalEmail;
-
-        let targetUserId = null;
-        if (originalStaff) {
-          // Identify the correct user by matching the original email or mobile
-          const matchConditions = [];
-          if (originalStaff.email) matchConditions.push(`email.eq.${originalStaff.email}`);
-          if (originalStaff.mobile) matchConditions.push(`mobile.eq.${originalStaff.mobile}`);
-          if (originalStaff.email) matchConditions.push(`username.eq.${originalStaff.email}`);
-          
-          if (matchConditions.length > 0) {
-            const { data: matchedUsers } = await supabaseClient
-              .from('users')
-              .select('id')
-              .or(matchConditions.join(','))
-              .limit(1);
-              
-            if (matchedUsers && matchedUsers.length > 0) {
-              targetUserId = matchedUsers[0].id;
-            }
-          }
-        }
 
         if (!targetUserId && users && users.length > 0) {
           const u = users.find((x: any) => 

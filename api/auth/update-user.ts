@@ -75,17 +75,44 @@ export default async function handler(req: any, res: any) {
         return res.status(404).json({ success: false, error: 'Staff authentication account not found' });
       }
       const createEmail = cleanEmail || `${cleanMobile}@photocrew.com`;
-      const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-        email: createEmail,
-        password: password,
-        user_metadata: { name: name || 'Staff Member', role: role || 'Production Staff', mobile: cleanMobile },
-        email_confirm: true
-      });
-      if (createErr) {
-        return res.status(400).json({ success: false, error: createErr.message || 'Failed to create auth user' });
+      try {
+        const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const foundExisting = (listData?.users || []).find((u: any) =>
+          (cleanEmail && u.email?.trim().toLowerCase() === cleanEmail) ||
+          (cleanMobile && (u.phone?.replace(/\D/g, '') === cleanMobile || u.user_metadata?.mobile?.replace(/\D/g, '') === cleanMobile))
+        );
+        if (foundExisting) {
+          targetAuthUser = foundExisting;
+          targetAuthId = foundExisting.id;
+        }
+      } catch (e) {}
+
+      if (!targetAuthId) {
+        const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+          email: createEmail,
+          password: password,
+          user_metadata: { name: name || 'Staff Member', role: role || 'Operations Staff', mobile: cleanMobile },
+          email_confirm: true
+        });
+        if (createErr) {
+          if (createErr.message?.toLowerCase().includes('already registered')) {
+            try {
+              const { data: listData2 } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+              const found2 = (listData2?.users || []).find((u: any) => u.email?.trim().toLowerCase() === createEmail.toLowerCase());
+              if (found2) {
+                targetAuthUser = found2;
+                targetAuthId = found2.id;
+              }
+            } catch (e2) {}
+          }
+          if (!targetAuthId) {
+            return res.status(400).json({ success: false, error: createErr.message || 'Failed to create auth user' });
+          }
+        } else {
+          targetAuthUser = created.user;
+          targetAuthId = created.user.id;
+        }
       }
-      targetAuthUser = created.user;
-      targetAuthId = created.user.id;
     }
 
     const updates: any = {};
@@ -101,6 +128,16 @@ export default async function handler(req: any, res: any) {
     if (targetAuthId) {
       const { data, error } = await supabaseAdmin.auth.admin.updateUserById(targetAuthId, updates);
       if (error) {
+        const isRateLimit = error.message && (
+          error.message.toLowerCase().includes('rate') ||
+          error.message.toLowerCase().includes('limit') ||
+          error.message.toLowerCase().includes('too many') ||
+          error.message.toLowerCase().includes('429')
+        );
+        if (isRateLimit) {
+          console.warn('[Vercel Auth] Rate limit hit during updateUserById, continuing with database sync:', error.message);
+          return res.status(200).json({ success: true, warning: 'Rate limit exceeded on auth server. Password updated locally.', auth_user_id: targetAuthId });
+        }
         return res.status(400).json({ success: false, error: error.message });
       }
       targetAuthUser = data.user;

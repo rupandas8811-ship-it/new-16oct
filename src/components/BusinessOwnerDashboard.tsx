@@ -1842,7 +1842,7 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
                 <CalendarIcon className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-zinc-500 font-bold uppercase text-[10px]">Active Range:</span>
                 <span className="text-zinc-200 font-bold">
-                  {datePreset === 'all' ? 'All Time' : `${formatDateToDDMMYYYY(startDate)} to ${formatDateToDDMMYYYY(endDate)}`}
+                  {datePreset === 'all' ? 'All Time' : `${formatDateDDMMYY(startDate)} – ${formatDateDDMMYY(endDate)}`}
                 </span>
               </div>
             </div>
@@ -2324,7 +2324,7 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
         isOpen={selectedCard !== null}
         onClose={() => setSelectedCard(null)}
         title={modalTitleAndMeta.title}
-        subtitle={startDate && endDate ? `${formatDateToDDMMYYYY(startDate)} ~ ${formatDateToDDMMYYYY(endDate)}` : ''}
+        subtitle={startDate && endDate ? `${formatDateDDMMYY(startDate)} – ${formatDateDDMMYY(endDate)}` : ''}
         accentColor={modalTitleAndMeta.accentColor}
         data={modalData}
         columns={modalColumns}
@@ -4210,7 +4210,7 @@ const RevenuePaymentSummarySection: React.FC<RevenuePaymentSummarySectionProps> 
             {getPeriodLabel(selectedPeriod)}
           </div>
           <div className="text-[11px] font-mono text-zinc-400">
-            Active Range: <span className="text-zinc-200">{formatDateToDDMMYYYY(startDate)}</span> to <span className="text-zinc-200">{formatDateToDDMMYYYY(endDate)}</span>
+            Active Range: <span className="text-zinc-200">{formatDateDDMMYY(startDate)}</span> – <span className="text-zinc-200">{formatDateDDMMYY(endDate)}</span>
           </div>
         </div>
 
@@ -4316,7 +4316,7 @@ const RevenuePaymentSummarySection: React.FC<RevenuePaymentSummarySectionProps> 
             </span>
             {startDate && endDate && (
               <span className="text-[10px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
-                {formatDateToDDMMYYYY(startDate)} to {formatDateToDDMMYYYY(endDate)}
+                {formatDateDDMMYY(startDate)} – {formatDateDDMMYY(endDate)}
               </span>
             )}
             {selectedCard && (
@@ -4493,7 +4493,7 @@ const RevenuePaymentSummarySection: React.FC<RevenuePaymentSummarySectionProps> 
         isOpen={selectedCard !== null && selectedCard.startsWith('summary_')}
         onClose={() => setSelectedCard(null)}
         title={modalTitleAndMeta.title}
-        subtitle={startDate && endDate ? `${formatDateToDDMMYYYY(startDate)} ~ ${formatDateToDDMMYYYY(endDate)}` : ''}
+        subtitle={startDate && endDate ? `${formatDateDDMMYY(startDate)} – ${formatDateDDMMYY(endDate)}` : ''}
         accentColor={modalTitleAndMeta.accentColor}
         data={modalData}
         columns={modalColumns}
@@ -4849,7 +4849,7 @@ const ReviewAndCloseModal: React.FC<ReviewAndCloseModalProps> = ({
                     </div>
                     <div>
                       <span className="text-[10px] font-mono uppercase text-zinc-500 block font-bold">Event Date</span>
-                      <span className="text-zinc-200 font-mono">{ev.eventDate}</span>
+                      <span className="text-zinc-200 font-mono">{formatDateDDMMYY(ev.eventDate) || ev.eventDate}</span>
                     </div>
                     <div>
                       <span className="text-[10px] font-mono uppercase text-zinc-500 block font-bold">Event Time</span>
@@ -5113,29 +5113,7 @@ const CalendarEventDetailModal: React.FC<CalendarEventDetailModalProps> = ({
 
   const formatReportingDate = (dateVal: string | null | undefined): string => {
     if (!dateVal || dateVal === '—' || dateVal === 'null' || dateVal === 'undefined') return '—';
-    const clean = String(dateVal).split('T')[0].trim();
-    const parts = clean.split(/[-/]/);
-    if (parts.length === 3) {
-      let y = 0, m = 0, d = 0;
-      if (parts[0].length === 4) {
-        y = parseInt(parts[0], 10);
-        m = parseInt(parts[1], 10) - 1;
-        d = parseInt(parts[2], 10);
-      } else if (parts[2].length === 4) {
-        d = parseInt(parts[0], 10);
-        m = parseInt(parts[1], 10) - 1;
-        y = parseInt(parts[2], 10);
-      }
-      if (y && !isNaN(m) && d) {
-        const dt = new Date(y, m, d);
-        if (!isNaN(dt.getTime())) {
-          const dayStr = String(d).padStart(2, '0');
-          const monthShort = dt.toLocaleString('en-US', { month: 'short' });
-          return `${dayStr} ${monthShort} ${y}`;
-        }
-      }
-    }
-    return clean;
+    return formatDateDDMMYY(dateVal) || String(dateVal);
   };
 
   const getReportingDate = (ev: any): string => {

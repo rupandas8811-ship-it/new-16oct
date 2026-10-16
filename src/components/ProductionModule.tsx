@@ -962,13 +962,14 @@ export const ProductionModule: React.FC<ProductionModuleProps> = ({ activeSubTab
     const clientName = whatsappShareData?.customer_name || '—';
     const clientMobile = whatsappShareData?.mobile || '—';
     const notes = whatsappShareData?.notes || 'No special notes.';
-    const globalDeadline = whatsappShareData?.global_deadline || '—';
-    const reportingDate = whatsappShareData?.reporting_date && whatsappShareData.reporting_date !== '—' ? whatsappShareData.reporting_date : null;
+    const globalDeadline = whatsappShareData?.global_deadline ? (formatDateDDMMYY(whatsappShareData.global_deadline) || whatsappShareData.global_deadline) : '—';
+    const reportingDate = whatsappShareData?.reporting_date && whatsappShareData.reporting_date !== '—' ? (formatDateDDMMYY(whatsappShareData.reporting_date) || whatsappShareData.reporting_date) : null;
     const reportingTime = whatsappShareData?.reporting_time && whatsappShareData.reporting_time !== '—' ? whatsappShareData.reporting_time : null;
     const assignedEquipment = whatsappShareData?.assigned_equipment && whatsappShareData.assigned_equipment !== '—' ? whatsappShareData.assigned_equipment : null;
 
     const deliverableLines = (Array.isArray(deliverables) ? deliverables : []).map((d: any, index: number) => {
-      return `${index + 1}. ${d.name} (Deadline: ${d.deadline || globalDeadline})`;
+      const dDeadline = d.deadline ? (formatDateDDMMYY(d.deadline) || d.deadline) : globalDeadline;
+      return `${index + 1}. ${d.name} (Deadline: ${dDeadline})`;
     }).join('\n');
 
     let msg = `Hi ${staff.name},
@@ -2707,16 +2708,8 @@ ${coordinatorName}`;
 
   const formatDisplayDate = (dateStr?: string | null): string => {
     if (!dateStr || dateStr.trim() === '' || dateStr.trim() === 'N/A' || dateStr.trim() === '—' || dateStr.trim() === 'Pending' || dateStr.trim() === 'Not Set') return 'Pending';
-    const cleanStr = dateStr.trim().split('T')[0];
-    const parts = cleanStr.split('-');
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        return `${parts[2]}-${parts[1]}-${parts[0]}`;
-      } else if (parts[2].length === 4) {
-        return cleanStr;
-      }
-    }
-    return cleanStr;
+    const formatted = formatDateDDMMYY(dateStr);
+    return formatted || dateStr.trim();
   };
 
   const getAutomatedProductionStatus = (prod: Production): string => {
@@ -3201,7 +3194,7 @@ Production Team`;
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(9);
     doc.text("PRODUCTION LEADS MODULE REPORT", 14, 25);
-    doc.text(`FILTER DATE RANGE: ${appliedStartDate ? formatDateDDMMYY(appliedStartDate) : 'ALL'} TO ${appliedEndDate ? formatDateDDMMYY(appliedEndDate) : 'ALL'}`, 14, 30);
+    doc.text(`FILTER DATE RANGE: ${appliedStartDate ? formatDateDDMMYY(appliedStartDate) : 'ALL'} – ${appliedEndDate ? formatDateDDMMYY(appliedEndDate) : 'ALL'}`, 14, 30);
     doc.text(`GENERATED: ${formatDateDDMMYY(new Date())}`, 14, 35);
     
     doc.setFillColor(245, 158, 11);
@@ -3312,7 +3305,7 @@ Production Team`;
             <h2>PHOTOCREW PICTURES</h2>
             <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; color: #555;">Production Leads Module Report</div>
             <div style="font-size: 10px; color: #777; margin-top: 5px;">
-              Filter Date Range: ${appliedStartDate ? formatDateDDMMYY(appliedStartDate) : 'ALL'} To ${appliedEndDate ? formatDateDDMMYY(appliedEndDate) : 'ALL'}<br/>
+              Filter Date Range: ${appliedStartDate ? formatDateDDMMYY(appliedStartDate) : 'ALL'} – ${appliedEndDate ? formatDateDDMMYY(appliedEndDate) : 'ALL'}<br/>
               Report Generated On: ${formatDateDDMMYY(new Date())}
             </div>
           </div>
@@ -4394,8 +4387,8 @@ _Please acknowledge receipt of this task assignment._`;
     const customerName = order ? order?.customer_name : 'Valued Client';
     const orderId = order ? order?.order_id : 'N/A';
     const projectName = order ? (order.package_name || order?.event_type) : 'Project Event';
-    const eventDate = order ? order?.event_date : 'N/A';
-    const targetDate = prod.target_delivery_date || prod.expected_delivery_date || 'N/A';
+    const eventDate = order && order.event_date ? (formatDateDDMMYY(order.event_date) || order.event_date) : 'N/A';
+    const targetDate = (prod.target_delivery_date || prod.expected_delivery_date) ? (formatDateDDMMYY(prod.target_delivery_date || prod.expected_delivery_date) || (prod.target_delivery_date || prod.expected_delivery_date)) : 'N/A';
     const priority = prod.project_priority || 'Medium';
     const notes = customNote || prod.remarks || 'Please process this assignment as per guidelines.';
     const assignedTask = `POST-PRODUCTION CONTENT CREATION`;
@@ -7321,6 +7314,7 @@ _Please access the PhotoCrew ERP Dashboard to synchronize progress._`;
                 supabaseClient,
                 mobile,
                 computedEmail,
+                null,
                 null
               );
 
@@ -8311,7 +8305,7 @@ _Please access the PhotoCrew ERP Dashboard to synchronize progress._`;
                       <div key={prod.production_id} className="bg-zinc-900/60 border border-zinc-850 p-3 rounded-xl space-y-2 text-left hover:border-zinc-700 transition-colors">
                         <div className="flex items-center justify-between">
                           <span className="text-[9px] font-mono text-violet-400 font-bold">{prod.production_id}</span>
-                          <span className="text-[8px] font-mono bg-zinc-950 px-1.5 py-0.5 rounded text-zinc-500">{prod.expected_delivery_date}</span>
+                          <span className="text-[8px] font-mono bg-zinc-950 px-1.5 py-0.5 rounded text-zinc-500">{prod.expected_delivery_date ? (formatDateDDMMYY(prod.expected_delivery_date) || prod.expected_delivery_date) : 'Pending'}</span>
                         </div>
                         
                         <div className="text-xs font-bold text-white leading-tight">Editor: {prod.editor_assigned || 'Unassigned'}</div>
@@ -8843,7 +8837,7 @@ _Please access the PhotoCrew ERP Dashboard to synchronize progress._`;
                           if (assignedStaffRecord) {
                             const handleSendWhatsApp = () => {
                               const pName = linkedOrder?.package_name || 'Event Post-Production';
-                              const dDate = expectedDate || 'Not set yet';
+                              const dDate = expectedDate ? (formatDateDDMMYY(expectedDate) || expectedDate) : 'Not set yet';
                               const rawLocation = prodItem.raw_footage_location || 'Not provided';
                               const details = notes || 'No special remarks recorded.';
                               
@@ -11983,7 +11977,7 @@ _Please access the PhotoCrew ERP Dashboard to synchronize progress._`;
                 </div>
                 <div>
                   <span className="text-[9px] text-zinc-500 uppercase font-mono tracking-wider block">Global Deadline</span>
-                  <span className="text-xs font-bold text-violet-400 mt-0.5 block font-mono">{whatsappShareData.global_deadline || 'N/A'}</span>
+                  <span className="text-xs font-bold text-violet-400 mt-0.5 block font-mono">{whatsappShareData.global_deadline ? (formatDateDDMMYY(whatsappShareData.global_deadline) || whatsappShareData.global_deadline) : 'N/A'}</span>
                 </div>
               </div>
 
@@ -12016,7 +12010,7 @@ _Please access the PhotoCrew ERP Dashboard to synchronize progress._`;
                               {(Array.isArray(deliverables) ? deliverables : []).map((d: any, idx: number) => (
                                 <div key={idx} className="text-[11px] text-zinc-400 flex items-center justify-between font-sans">
                                   <span>• {d.name}</span>
-                                  <span className="text-[10px] text-zinc-500 font-mono">Deadline: {d.deadline || whatsappShareData.global_deadline}</span>
+                                  <span className="text-[10px] text-zinc-500 font-mono">Deadline: {d.deadline ? (formatDateDDMMYY(d.deadline) || d.deadline) : (whatsappShareData.global_deadline ? (formatDateDDMMYY(whatsappShareData.global_deadline) || whatsappShareData.global_deadline) : 'N/A')}</span>
                                 </div>
                               ))}
                             </div>

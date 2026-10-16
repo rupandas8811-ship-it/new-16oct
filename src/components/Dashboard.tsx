@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { CurrentStage } from '../types';
 import { CameraLensGraphic } from './ProductionModule';
-import { formatINR, formatTime12Hour, getCustomers, formatDateTime } from '../utils';
+import { formatINR, formatTime12Hour, getCustomers, formatDateTime, formatDateDDMMYY } from '../utils';
 import { ProjectDetailModal } from './ProjectDetailModal';
 import { AppLogo } from './AppLogo';
 import { BusinessOwnerCalendar } from './BusinessOwnerCalendar';
@@ -1051,7 +1051,7 @@ export const Dashboard: React.FC = () => {
                       <div className="flex flex-col">
                         <span className="font-bold text-zinc-150 text-[13px]">{order.customer_name}</span>
                         <span className="text-[10px] text-amber-500 font-mono tracking-wide">{order.package_name || 'Shoot'}</span>
-                        <span className="text-[9px] text-zinc-550 font-mono">Date: {order.event_date}</span>
+                        <span className="text-[9px] text-zinc-550 font-mono">Date: {order.event_date ? (formatDateDDMMYY(order.event_date) || order.event_date) : 'N/A'}</span>
                       </div>
                     </td>
 

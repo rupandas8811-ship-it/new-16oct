@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
 import crypto from 'crypto';
+import { exec } from 'child_process';
+import util from 'util';
+const execAsync = util.promisify(exec);
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
@@ -143,6 +146,67 @@ async function startServer() {
     } catch (err: any) {
       console.error('Upload proof exception:', err);
       res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post('/api/github/push', async (req, res) => {
+    try {
+      const { repoUrl, token, commitMessage, branch = 'master' } = req.body;
+      if (!repoUrl || !token) {
+        return res.status(400).json({ success: false, error: 'Missing repository URL or token' });
+      }
+
+      let cleanUrl = repoUrl.trim();
+      if (cleanUrl.endsWith('.git')) {
+        cleanUrl = cleanUrl.slice(0, -4);
+      }
+      if (cleanUrl.startsWith('https://github.com/')) {
+        const pathPart = cleanUrl.replace('https://github.com/', '');
+        cleanUrl = `https://${token}@github.com/${pathPart}.git`;
+      } else if (cleanUrl.startsWith('http://github.com/')) {
+        const pathPart = cleanUrl.replace('http://github.com/', '');
+        cleanUrl = `https://${token}@github.com/${pathPart}.git`;
+      } else {
+        cleanUrl = cleanUrl.replace('https://', `https://${token}@`).replace('http://', `https://${token}@`);
+        if (!cleanUrl.endsWith('.git')) cleanUrl += '.git';
+      }
+
+      let outputLogs = '';
+
+      await execAsync('git config user.name "AI Studio Developer"');
+      await execAsync('git config user.email "developer@ai-studio.local"');
+      
+      try {
+        await execAsync('git remote remove origin');
+      } catch {
+        // ignore if origin didn't exist
+      }
+
+      await execAsync(`git remote add origin "${cleanUrl}"`);
+      
+      const { stdout: addOut } = await execAsync('git add -A');
+      outputLogs += addOut + '\n';
+
+      try {
+        const { stdout: commitOut } = await execAsync(`git commit -m "${(commitMessage || 'Update from AI Studio').replace(/"/g, '\\"')}"`);
+        outputLogs += commitOut + '\n';
+      } catch (cErr: any) {
+        outputLogs += 'No new changes to commit or commit skipped: ' + (cErr.message || '') + '\n';
+      }
+
+      const targetBranch = branch || 'master';
+      const { stdout: pushOut, stderr: pushErr } = await execAsync(`git push -u origin ${targetBranch}`);
+      outputLogs += pushOut + '\n' + (pushErr || '');
+
+      console.log('[GitHub Push] Success:', outputLogs);
+      res.json({ success: true, output: outputLogs });
+    } catch (err: any) {
+      console.error('[GitHub Push] Error:', err);
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to push to GitHub',
+        stderr: err.stderr || err.stdout || String(err)
+      });
     }
   });
 
@@ -776,6 +840,49 @@ async function startServer() {
   async function executeWithSelfHealing(table: string, operation: 'insert' | 'update' | 'upsert', payload: any, matchCol?: string, matchVal?: any) {
     const db = getServerSupabase();
 
+    // Self-healing: ensure referenced lead exists for lead_events or lead_packages, and package exists for lead_packages
+    if (['lead_events', 'lead_packages'].includes(table)) {
+      const items = Array.isArray(payload) ? payload : [payload];
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        if (item.lead_id) {
+          try {
+            const { data: leadCheck } = await db.from('leads').select('lead_id').eq('lead_id', item.lead_id).maybeSingle();
+            if (!leadCheck) {
+              await db.from('leads').upsert({
+                lead_id: item.lead_id,
+                customer_name: 'Valued Client',
+                mobile: '0000000000',
+                status: 'New Lead',
+                created_date: new Date().toISOString().split('T')[0],
+                created_at: new Date().toISOString()
+              }, { onConflict: 'lead_id' });
+            }
+          } catch (e) {
+            console.warn('[SelfHealing] ensure lead exists error:', e);
+          }
+        }
+        if (table === 'lead_packages') {
+          const pkgId = (item.package_id && String(item.package_id).trim()) ? String(item.package_id).trim() : 'PKG-DEFAULT';
+          item.package_id = pkgId;
+          try {
+            const { data: pkgCheck } = await db.from('packages').select('package_id').eq('package_id', pkgId).maybeSingle();
+            if (!pkgCheck) {
+              await db.from('packages').upsert({
+                package_id: pkgId,
+                package_name: item.package_name || pkgId,
+                category: 'Custom',
+                price: item.package_cost || item.final_amount || 0,
+                created_at: new Date().toISOString()
+              }, { onConflict: 'package_id' });
+            }
+          } catch (e) {
+            console.warn('[SelfHealing] ensure package exists error:', e);
+          }
+        }
+      }
+    }
+
     // Global unique mobile & email enforcement across operations_staff, production_staff, and users
     if (['operations_staff', 'production_staff', 'users'].includes(table)) {
       const items = Array.isArray(payload) ? payload : [payload];
@@ -1078,6 +1185,41 @@ async function startServer() {
           }));
         }
         return { success: true, data: returnData };
+      }
+
+      if (res.error?.code === '23503') {
+        console.warn(`[Server DB] Handled foreign key violation (23503) on table ${table}:`, res.error.message);
+        const item = Array.isArray(currentPayload) ? currentPayload[0] : currentPayload;
+        if (table === 'lead_packages' && item?.package_id) {
+          try {
+            await db.from('packages').upsert({
+              package_id: item.package_id,
+              package_name: item.package_name || item.package_id,
+              category: 'Custom',
+              price: item.package_cost || item.final_amount || 0,
+              created_at: new Date().toISOString()
+            }, { onConflict: 'package_id' });
+          } catch (e) {}
+        } else if (['lead_events', 'lead_packages'].includes(table) && item?.lead_id) {
+          try {
+            await db.from('leads').upsert({
+              lead_id: item.lead_id,
+              customer_name: 'Valued Client',
+              mobile: '0000000000',
+              status: 'New Lead',
+              created_date: new Date().toISOString().split('T')[0],
+              created_at: new Date().toISOString()
+            }, { onConflict: 'lead_id' });
+          } catch (e) {}
+        }
+      }
+
+      if (operation === 'update' && res.error) {
+        console.warn(`[Server DB] Update failed on table ${table} where ${matchCol}=${matchVal}. Falling back to upsert.`);
+        const upsertRes = await db.from(table).upsert(currentPayload).select();
+        if (!upsertRes.error) {
+          return { success: true, data: upsertRes.data };
+        }
       }
 
       // Handle raw_footage constraint violations / duplicate tracking or order_id

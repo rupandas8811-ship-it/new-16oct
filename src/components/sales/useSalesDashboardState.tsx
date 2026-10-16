@@ -3280,13 +3280,13 @@ export const useSalesDashboardState = (externalActiveTab?: string, externalSetAc
       if (leadObj.events && leadObj.events.length > 0) {
         eventDetailsStr = leadObj.events.map((ev) => {
           const eName = ev.event_name || ev.event_type || 'Event';
-          const eDate = ev.event_date || 'N/A';
+          const eDate = ev.event_date ? (formatDateDDMMYY(ev.event_date) || ev.event_date) : 'N/A';
           const eTime = ev.event_start_time ? convertTo12Hour(ev.event_start_time) : '';
           return `🎉 ${eName}\n📅 Date: ${eDate}${eTime ? ` | Time: ${eTime}` : ''}`;
         }).join('\n\n') + '\n';
       } else {
         const safeEventType = String(leadObj.event_type || 'Event');
-        const safeEventDate = String(leadObj.event_date || 'N/A');
+        const safeEventDate = leadObj.event_date ? (formatDateDDMMYY(leadObj.event_date) || leadObj.event_date) : 'N/A';
         eventDetailsStr = `🎉 Event: ${safeEventType}\n📅 Event Date: ${safeEventDate}\n`;
       }
 

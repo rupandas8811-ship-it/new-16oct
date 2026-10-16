@@ -1410,7 +1410,7 @@ export const PendingPaymentsReport: React.FC = () => {
             </span>
             {activeEventDateRange.start && activeEventDateRange.end && (
               <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-amber-400 border border-zinc-700">
-                {dateFilterOption === 'Custom Date Range' ? 'Custom Range' : dateFilterOption}: {formatDateToDDMMYYYY(activeEventDateRange.start)} - {formatDateToDDMMYYYY(activeEventDateRange.end)}
+                {dateFilterOption === 'Custom Date Range' ? 'Custom Range' : dateFilterOption}: {formatDateDDMMYY(activeEventDateRange.start)} – {formatDateDDMMYY(activeEventDateRange.end)}
               </span>
             )}
           </div>

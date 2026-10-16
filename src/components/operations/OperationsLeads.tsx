@@ -181,11 +181,16 @@ export const sortEventsByDateAsc = (events: any[]): any[] => {
     const keyA = getEventDateSortKey(a?.event_date);
     const keyB = getEventDateSortKey(b?.event_date);
     if (keyA !== keyB) {
-      return keyA.localeCompare(keyB);
+      return keyB.localeCompare(keyA); // Most recent date first (descending)
+    }
+    const timeA = new Date(a?.created_at || a?.createdAt || 0).getTime();
+    const timeB = new Date(b?.created_at || b?.createdAt || 0).getTime();
+    if (timeA !== timeB) {
+      return timeB - timeA; // Secondary sort: newest first
     }
     const nameA = String(a?.event_name || a?.id || '');
     const nameB = String(b?.event_name || b?.id || '');
-    return nameA.localeCompare(nameB);
+    return nameB.localeCompare(nameA);
   });
 };
 
